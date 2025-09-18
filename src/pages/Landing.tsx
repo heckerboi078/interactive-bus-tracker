@@ -65,6 +65,11 @@ export default function Landing() {
               >
                 View Demo
               </Button>
+              <a href="/demo.html" className="hidden sm:inline-flex">
+                <Button variant="outline">
+                  Plain JS Demo
+                </Button>
+              </a>
               <Button
                 onClick={() => navigate(isAuthenticated ? "/tracker" : "/auth")}
                 className="bg-gradient-to-r from-blue-600 to-orange-500 hover:from-blue-700 hover:to-orange-600 text-white border-0"
