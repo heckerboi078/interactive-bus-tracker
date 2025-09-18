@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Interactive Bus Tracker (Pure HTML/CSS/JS)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Leaflet CSS & JS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1b1b1f;
+        --primary: #3859ff;
+        --primary-2: #ff7a00;
+        --muted: #667085;
+        --border: #e6e8ec;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+        color: var(--fg);
+        background: var(--bg);
+      }
+
+      .app {
+        height: 100%;
+        display: flex;
+        overflow: hidden;
+      }
+
+      /* Map takes remaining width; shrinks when sidebar opens */
+      .map-wrap {
+        position: relative;
+        width: 100%;
+        transition: width 0.4s ease-in-out;
+      }
+      .map {
+        position: absolute;
+        inset: 0;
+      }
+
+      /* Sidebar */
+      .sidebar {
+        width: 0;
+        opacity: 0;
+        border-right: 1px solid var(--border);
+        background: #fff;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: width 0.4s ease-in-out, opacity 0.3s ease-in-out;
+      }
+      .sidebar.open {
+        width: min(560px, 50vw);
+        opacity: 1;
+      }
+
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .title {
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .icon-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+      .icon-btn:hover {
+        background: #f2f4f7;
+      }
+
+      .sidebar-content {
+        padding: 16px;
+        overflow: auto;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--fg);
+        background: #fff;
+      }
+      .badge.ok {
+        background: #eef4ff;
+        color: #1849a9;
+        border-color: #dce7ff;
+      }
+      .badge.warn {
+        background: #fff3e8;
+        color: #8a3b00;
+        border-color: #ffe1c7;
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .bus-item {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+        cursor: pointer;
+        transition: border-color 0.2s ease;
+      }
+      .bus-item:hover {
+        border-color: rgba(56, 89, 255, 0.25);
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      /* Custom markers (match existing project styles) */
+      .custom-marker {
+        background: white;
+        border-radius: 50%;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid white;
+        width: 40px;
+        height: 40px;
+      }
+      .station-marker {
+        background: #e3f2fd;
+      }
+      .bus-marker {
+        background: #fff3e0;
+      }
+
+      /* Top bar */
+      .topbar {
+        position: absolute;
+        z-index: 400;
+        left: 16px;
+        top: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #ffffffcc;
+        backdrop-filter: saturate(140%) blur(6px);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 8px 10px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        background: linear-gradient(90deg, var(--primary), var(--primary-2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        user-select: none;
+      }
+      .cta {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: #fff;
+        padding: 8px 10px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .cta.primary {
+        border: none;
+        color: #fff;
+        background: linear-gradient(90deg, var(--primary), var(--primary-2));
+      }
+
+      @media (max-width: 900px) {
+        .sidebar.open { width: 60vw; }
+      }
+      @media (max-width: 640px) {
+        .sidebar.open { width: 88vw; }
+        .topbar { left: 8px; right: 8px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside id="sidebar" class="sidebar" aria-hidden="true" aria-label="Details sidebar">
+        <div class="sidebar-header">
+          <div id="sidebarTitle" class="title">Details</div>
+          <button id="btnClose" class="icon-btn" aria-label="Close sidebar" title="Close">
+            ✕
+          </button>
+        </div>
+        <div class="sidebar-content">
+          <!-- Station view -->
+          <div id="stationView" hidden>
+            <div class="card">
+              <div class="row" style="margin-bottom:8px;">
+                <strong id="stationName">Central Station</strong>
+                <span id="stationStatus" class="badge ok">Open</span>
+              </div>
+              <div class="muted" id="stationAddress">123 Main Street, New York, NY</div>
+            </div>
+
+            <div class="card">
+              <div class="row" style="margin-bottom:8px;">
+                <strong>Arriving Buses</strong>
+              </div>
+              <div id="busList" class="list"></div>
+            </div>
+          </div>
+
+          <!-- Bus view -->
+          <div id="busView" hidden>
+            <div class="card">
+              <div class="row" style="margin-bottom:8px;">
+                <strong id="busRoute">Route 42</strong>
+                <span id="busStatusBadge" class="badge ok">On Time</span>
+              </div>
+
+              <div class="row">
+                <div>
+                  <div class="muted">Vehicle ID</div>
+                  <div id="busVehicle" style="font-weight:600">NYC-4201</div>
+                </div>
+                <div>
+                  <div class="muted">Passengers</div>
+                  <div id="busPassengers" style="font-weight:600">28</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:10px;">
+                <div>
+                  <div class="muted">ETA</div>
+                  <div id="busEta" style="font-weight:600">3 min</div>
+                </div>
+                <div>
+                  <div class="muted">Location</div>
+                  <div id="busCoords" style="font-weight:600">0, 0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="muted" style="font-size:12px; margin-top:12px;">
+            Tip: Click the station or bus markers on the map to view details here.
+          </div>
+        </div>
+      </aside>
+
+      <div class="map-wrap" id="mapWrap">
+        <div class="topbar">
+          <div class="brand">
+            <span style="display:inline-flex;width:28px;height:28px;border-radius:8px;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;">🚌</span>
+            BusTracker
+          </div>
+          <button id="btnStation" class="cta" title="Focus station">Station</button>
+          <button id="btnBus" class="cta" title="Focus bus">Bus</button>
+          <button id="btnOpen" class="cta primary" title="Open sidebar">Open Details</button>
+        </div>
+        <div id="map" class="map" role="region" aria-label="Map"></div>
+      </div>
+    </div>
+
+    <script>
+      // Simple state
+      const state = {
+        station: {
+          id: "station-1",
+          name: "Central Station",
+          address: "123 Main Street, New York, NY",
+          lat: 40.7589,
+          lng: -73.9851,
+        },
+        bus: {
+          id: "bus-1",
+          route: "Route 42",
+          vehicleId: "NYC-4201",
+          status: "On Time", // "On Time" | "Delayed" | "Arriving"
+          eta: "3 min",
+          passengers: 28,
+          lat: 40.7589,
+          lng: -73.9851,
+        },
+        sidebarOpen: false,
+        selected: null, // 'station' | 'bus' | null
+      };
+
+      // UI elements
+      const sidebar = document.getElementById("sidebar");
+      const mapWrap = document.getElementById("mapWrap");
+
+      const sidebarTitle = document.getElementById("sidebarTitle");
+      const stationView = document.getElementById("stationView");
+      const busView = document.getElementById("busView");
+
+      const stationName = document.getElementById("stationName");
+      const stationAddress = document.getElementById("stationAddress");
+      const busList = document.getElementById("busList");
+
+      const busRoute = document.getElementById("busRoute");
+      const busVehicle = document.getElementById("busVehicle");
+      const busPassengers = document.getElementById("busPassengers");
+      const busEta = document.getElementById("busEta");
+      const busCoords = document.getElementById("busCoords");
+      const busStatusBadge = document.getElementById("busStatusBadge");
+
+      const btnClose = document.getElementById("btnClose");
+      const btnOpen = document.getElementById("btnOpen");
+      const btnStation = document.getElementById("btnStation");
+      const btnBus = document.getElementById("btnBus");
+
+      // Sidebar open/close helpers
+      function openSidebar(type) {
+        state.sidebarOpen = true;
+        state.selected = type || state.selected || "station";
+        sidebar.classList.add("open");
+        mapWrap.style.width = "50%";
+        renderSidebar();
+        setTimeout(() => map.invalidateSize(), 300);
+      }
+      function closeSidebar() {
+        state.sidebarOpen = false;
+        state.selected = null;
+        sidebar.classList.remove("open");
+        mapWrap.style.width = "100%";
+        setTimeout(() => map.invalidateSize(), 300);
+      }
+
+      btnClose.addEventListener("click", closeSidebar);
+      btnOpen.addEventListener("click", () => openSidebar("station"));
+      btnStation.addEventListener("click", () => {
+        map.setView([state.station.lat, state.station.lng], 15);
+        openSidebar("station");
+      });
+      btnBus.addEventListener("click", () => {
+        map.setView([state.bus.lat, state.bus.lng], 16);
+        openSidebar("bus");
+      });
+
+      // Sidebar content rendering
+      function renderSidebar() {
+        const type = state.selected;
+        if (!state.sidebarOpen || !type) {
+          stationView.hidden = true;
+          busView.hidden = true;
+          return;
+        }
+
+        if (type === "station") {
+          sidebarTitle.textContent = "Station Details";
+          stationView.hidden = false;
+          busView.hidden = true;
+
+          stationName.textContent = state.station.name;
+          stationAddress.textContent = state.station.address;
+
+          busList.innerHTML = "";
+          const bus = state.bus;
+          const item = document.createElement("div");
+          item.className = "bus-item";
+          item.innerHTML = `
+            <div class="row" style="margin-bottom:6px;">
+              <div style="font-weight:700;color:#3859ff">${bus.route}</div>
+              <span class="badge ${bus.status === "On Time" ? "ok" : "warn"}">${bus.status}</span>
+            </div>
+            <div class="muted">ETA: ${bus.eta}</div>
+            <div class="muted">Vehicle: ${bus.vehicleId}</div>
+          `;
+          item.addEventListener("click", () => {
+            map.setView([bus.lat, bus.lng], 16);
+            openSidebar("bus");
+          });
+          busList.appendChild(item);
+        } else {
+          sidebarTitle.textContent = "Bus Details";
+          stationView.hidden = true;
+          busView.hidden = false;
+
+          const b = state.bus;
+          busRoute.textContent = b.route;
+          busVehicle.textContent = b.vehicleId;
+          busPassengers.textContent = String(b.passengers);
+          busEta.textContent = b.eta;
+          busCoords.textContent = `${b.lat.toFixed(6)}, ${b.lng.toFixed(6)}`;
+          busStatusBadge.textContent = b.status;
+          busStatusBadge.className =
+            "badge " + (b.status === "On Time" ? "ok" : "warn");
+        }
+      }
+
+      // Initialize Leaflet map
+      const map = L.map("map").setView([state.station.lat, state.station.lng], 14);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+      }).addTo(map);
+
+      // Station marker
+      const stationIcon = L.divIcon({
+        html:
+          '<div class="custom-marker station-marker" title="Station">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="#1976d2"/></svg>' +
+          "</div>",
+        className: "",
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+      });
+      const stationMarker = L.marker([state.station.lat, state.station.lng], {
+        icon: stationIcon,
+      })
+        .addTo(map)
+        .on("click", () => {
+          state.selected = "station";
+          openSidebar("station");
+        });
+
+      // Bus marker
+      const busIcon = L.divIcon({
+        html:
+          '<div class="custom-marker bus-marker" title="Bus">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 16C4 16.88 4.39 17.67 5 18.22V20C5 20.55 5.45 21 6 21H7C7.55 21 8 20.55 8 20V19H16V20C16 20.55 16.45 21 17 21H18C18.55 21 19 20.55 19 20V18.22C19.61 17.67 20 16.88 20 16V6C20 5.11 19.89 4.61 19.8 4.2C19.75 4.09 19.59 3.59 19 3H5C4.4 3.59 4.25 4.09 4.2 4.2C4.11 4.61 4 5.11 4 6V16ZM7.5 17C6.67 17 6 16.33 6 15.5S6.67 14 7.5 14 9 14.67 9 15.5 8.33 17 7.5 17ZM16.5 17C15.67 17 15 16.33 15 15.5S15.67 14 16.5 14 18 14.67 18 15.5 17.33 17 16.5 17ZM18 11H6V6H18V11Z" fill="#f57c00"/></svg>' +
+          "</div>",
+        className: "",
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+      });
+      const busMarker = L.marker([state.bus.lat, state.bus.lng], {
+        icon: busIcon,
+      })
+        .addTo(map)
+        .on("click", () => {
+          state.selected = "bus";
+          openSidebar("bus");
+        });
+
+      // Simulate bus movement
+      function stepBus() {
+        // small random jitter
+        state.bus.lat += (Math.random() - 0.5) * 0.001;
+        state.bus.lng += (Math.random() - 0.5) * 0.001;
+
+        // simple status/eta changes
+        const rnd = Math.random();
+        if (rnd < 0.05) {
+          state.bus.status = "Delayed";
+          state.bus.eta = "6 min";
+        } else if (rnd < 0.15) {
+          state.bus.status = "Arriving";
+          state.bus.eta = "1 min";
+        } else {
+          state.bus.status = "On Time";
+          state.bus.eta = Math.max(1, Math.round(1 + Math.random() * 5)) + " min";
+        }
+        state.bus.passengers = Math.max(
+          0,
+          Math.min(60, state.bus.passengers + (Math.random() > 0.5 ? 1 : -1))
+        );
+
+        // update marker & sidebar if visible
+        busMarker.setLatLng([state.bus.lat, state.bus.lng]);
+        if (state.sidebarOpen) renderSidebar();
+      }
+
+      const interval = setInterval(stepBus, 2000);
+
+      // Resize map after sidebar transition ends (ensure correct tiles)
+      const resizeObs = new MutationObserver(() => {
+        setTimeout(() => map.invalidateSize(), 420);
+      });
+      resizeObs.observe(sidebar, { attributes: true, attributeFilter: ["class"] });
+
+      // Initial render
+      renderSidebar();
+
+      // Cleanup if page unloads
+      window.addEventListener("beforeunload", () => clearInterval(interval));
+    </script>
+  </body>
+</html>
